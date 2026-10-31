@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS
+        "book_library.c"
+        "text_pager.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        epaper
+        sdcard
+        json
+        log
+        freertos
+)

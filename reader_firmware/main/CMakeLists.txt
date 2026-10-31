@@ -1,0 +1,18 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "reader_ui.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        nvs_flash
+        freertos
+        esp_timer
+        log
+        power_mgr
+        sdcard
+        button
+        epaper
+        reader_core
+        ble_sync
+)

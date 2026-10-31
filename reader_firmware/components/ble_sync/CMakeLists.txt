@@ -1,0 +1,15 @@
+idf_component_register(
+    SRCS
+        "ble_sync.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        bt
+        freertos
+        power_mgr
+        sdcard
+        fatfs
+        vfs
+        log
+        nvs_flash
+)

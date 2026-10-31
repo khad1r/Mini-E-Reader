@@ -1,0 +1,20 @@
+{
+  "name": "Mini E-Reader Manager",
+  "short_name": "E-Reader",
+  "description": "Web Bluetooth file manager and book synchronizer for ESP32-S3 Mini E-Reader",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "productivity", "books"]
+}

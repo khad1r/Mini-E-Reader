@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Mini E-Reader Manager</title>
+  <meta name="description" content="Web Bluetooth book sync and file manager for ESP32-S3 Mini E-Reader">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="E-Reader">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- Header Section -->
+    <header class="app-header">
+      <div class="brand-section">
+        <img src="icon.svg" alt="Mini E-Reader Logo" class="brand-logo">
+        <div class="brand-text">
+          <h1>Mini E-Reader <span class="brand-badge">Sync</span></h1>
+          <p>ESP32-S3 E-Paper Web Bluetooth Manager</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Theme Toggle Button -->
+        <button id="themeToggleBtn" class="btn-icon" aria-label="Toggle Theme" title="Toggle Dark/Light Mode">
+          <!-- Sun Icon (for dark mode) -->
+          <svg id="themeIconSun" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <!-- Moon Icon (for light mode) -->
+          <svg id="themeIconMoon" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+
+        <!-- BLE Connection Button -->
+        <button id="connectBtn" class="btn-connect">
+          <span id="statusDot" class="status-dot disconnected"></span>
+          <span id="connectBtnText">Connect E-Reader</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;">
+            <path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Browser Incompatibility Banner (hidden by default) -->
+    <div id="compatBanner" class="alert-banner alert-warning" style="display: none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <div>
+        <strong>Web Bluetooth Not Supported:</strong> Your current browser does not support the Web Bluetooth API.
+        Please open this application in <strong>Google Chrome</strong>, <strong>Microsoft Edge</strong>, or <strong>Bluefy (iOS)</strong> over HTTPS or localhost.
+      </div>
+    </div>
+
+    <!-- Dashboard Status Grid -->
+    <section class="dashboard-grid">
+      <!-- Device Status Card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect>
+              <line x1="12" y1="18" x2="12.01" y2="18"></line>
+            </svg>
+            Device
+          </span>
+          <span id="deviceStateBadge" class="card-badge badge-muted">Disconnected</span>
+        </div>
+        <div id="deviceNameText" class="stat-value">Mini-E-Reader</div>
+        <div class="stat-sub">
+          <span id="deviceUuidText">UUID: 0000fe60</span>
+          <span id="deviceMtuText">MTU: 512B</span>
+        </div>
+      </div>
+
+      <!-- Battery Status Card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="1" y="6" width="18" height="12" rx="2" ry="2"></rect>
+              <line x1="23" y1="11" x2="23" y2="13"></line>
+            </svg>
+            Battery
+          </span>
+          <span id="chargingBadge" class="card-badge badge-muted">—</span>
+        </div>
+        <div id="batteryPctText" class="stat-value">—%</div>
+        <div class="stat-sub">
+          <span id="batteryVoltageText">— V</span>
+          <span id="batteryStatusDesc">Awaiting connection</span>
+        </div>
+        <div class="meter-bar">
+          <div id="batteryMeterFill" class="meter-fill meter-battery" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- Storage Status Card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+              <line x1="6" y1="6" x2="6.01" y2="6"></line>
+              <line x1="6" y1="18" x2="6.01" y2="18"></line>
+            </svg>
+            MicroSD Storage
+          </span>
+          <span id="storageBadge" class="card-badge badge-muted">—</span>
+        </div>
+        <div id="storageFreeText" class="stat-value">—</div>
+        <div class="stat-sub">
+          <span id="storageUsedText">Used: —</span>
+          <span id="storageTotalText">Total: —</span>
+        </div>
+        <div class="meter-bar">
+          <div id="storageMeterFill" class="meter-fill meter-storage" style="width: 0%;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Upload Section -->
+    <section class="upload-section">
+      <div class="section-title">
+        <div class="section-title-left">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <h2>Send Books to E-Reader</h2>
+        </div>
+      </div>
+
+      <!-- Drag & Drop Zone -->
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Drop files here or click to browse">
+        <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          <path d="M12 7v6"></path>
+          <path d="M9 10l3-3 3 3"></path>
+        </svg>
+        <div class="dropzone-title">Drop .txt books here, or click to browse</div>
+        <div class="dropzone-subtitle">Transfers directly to /sdcard/books/ via BLE chunked stream</div>
+        <div class="dropzone-hint">Supports UTF-8 Plain Text files (.txt) &bull; Up to 506 bytes/chunk</div>
+        <input type="file" id="fileInput" class="file-input" accept=".txt,text/plain" multiple>
+      </div>
+
+      <!-- Active Upload Card (shown while transmitting) -->
+      <div id="uploadActiveCard" class="upload-active-card">
+        <div class="upload-header">
+          <div id="uploadingFileName" class="upload-filename">uploading_book.txt</div>
+          <button id="cancelUploadBtn" class="btn-cancel-upload">Cancel Upload</button>
+        </div>
+
+        <div class="upload-progress-container">
+          <div id="uploadProgressFill" class="upload-progress-fill"></div>
+        </div>
+
+        <div class="upload-stats-grid">
+          <div class="upload-stat-item">
+            <div class="upload-stat-label">Progress</div>
+            <div id="uploadPctStat" class="upload-stat-val">0.0%</div>
+          </div>
+          <div class="upload-stat-item">
+            <div class="upload-stat-label">Transfer Speed</div>
+            <div id="uploadSpeedStat" class="upload-stat-val">0.0 KB/s</div>
+          </div>
+          <div class="upload-stat-item">
+            <div class="upload-stat-label">Sequence ID</div>
+            <div id="uploadSeqStat" class="upload-stat-val">#0 / 0</div>
+          </div>
+          <div class="upload-stat-item">
+            <div class="upload-stat-label">Estimated Time</div>
+            <div id="uploadEtaStat" class="upload-stat-val">—</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Remote Books Management Section -->
+    <section class="books-section">
+      <div class="section-title">
+        <div class="section-title-left">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+          </svg>
+          <h2>Books on E-Reader</h2>
+          <span id="booksCountBadge" class="card-badge badge-muted">0 books</span>
+        </div>
+      </div>
+
+      <!-- Controls: Filter & Refresh -->
+      <div class="books-controls">
+        <div class="search-input-wrapper">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="bookSearchInput" class="search-input" placeholder="Search books by name...">
+        </div>
+
+        <button id="refreshBooksBtn" class="btn-secondary" title="Query SD card for books">
+          <svg id="refreshBooksIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          <span>Refresh Books</span>
+        </button>
+
+        <button id="refreshStatusBtn" class="btn-secondary" title="Read Battery & Storage">
+          <svg id="refreshStatusIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+          </svg>
+          <span>Refresh Status</span>
+        </button>
+      </div>
+
+      <!-- Book List Container -->
+      <div id="booksList" class="books-list">
+        <!-- Rendered dynamically via app.js -->
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          <p>Connect your Mini E-Reader to view and manage books.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Activity Log Console -->
+    <section class="log-section">
+      <div id="logHeader" class="log-header">
+        <div class="log-header-left">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+          <span>Activity Log</span>
+          <span id="logCountBadge" class="log-badge">0</span>
+        </div>
+        <div class="log-actions">
+          <button id="clearLogBtn" class="btn-clear-log" title="Clear log">Clear</button>
+          <span id="logToggleIcon">&#x25BC;</span>
+        </div>
+      </div>
+      <div id="logBody" class="log-body">
+        <!-- Log entries appear here -->
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Delete Book Confirmation Modal -->
+  <div id="deleteModal" class="modal-backdrop">
+    <div class="modal-card">
+      <h3 class="modal-title">Delete Book</h3>
+      <p id="deleteModalText" class="modal-desc">Are you sure you want to delete this book from your E-Reader?</p>
+      <div class="modal-actions">
+        <button id="cancelDeleteBtn" class="btn-secondary">Cancel</button>
+        <button id="confirmDeleteBtn" class="btn-danger">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <!-- PWA Main Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
