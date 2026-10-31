@@ -407,13 +407,20 @@ static void handle_cmd_finish_upload(void)
     s_is_uploading = false;
 
     if (s_expected_file_size > 0 && s_bytes_received != s_expected_file_size) {
-        ESP_LOGW(TAG, "Upload size mismatch: got %u, expected %u",
+        ESP_LOGE(TAG, "Upload size mismatch: got %u, expected %u",
                  (unsigned)s_bytes_received, (unsigned)s_expected_file_size);
+        s_upload_error = true;
     }
 
     uint8_t status = s_upload_error ? BLE_SYNC_STATUS_ERROR : BLE_SYNC_STATUS_OK;
+    if (s_upload_error && s_upload_filename[0] != '\0') {
+        char fpath[256];
+        snprintf(fpath, sizeof(fpath), "%s/%s", BOOKS_DIR_PATH, s_upload_filename);
+        unlink(fpath);
+        ESP_LOGW(TAG, "Deleted corrupted/incomplete file on error: %s", fpath);
+    }
+
     uint8_t resp[2] = { BLE_SYNC_OP_FINISH_UPLOAD, status };
-    ble_sync_notify(s_control_val_handle, resp, sizeof(resp));
 
     ESP_LOGI(TAG, "Upload finished: %u bytes received, status=%d",
              (unsigned)s_bytes_received, status);
@@ -466,6 +473,14 @@ static void handle_cmd_abort_upload(void)
     }
     s_is_uploading = false;
 
+    if (s_upload_filename[0] != '\0') {
+        char fpath[256];
+        snprintf(fpath, sizeof(fpath), "%s/%s", BOOKS_DIR_PATH, s_upload_filename);
+        unlink(fpath);
+        ESP_LOGW(TAG, "Deleted partial file on abort: %s", fpath);
+        s_upload_filename[0] = '\0';
+    }
+
     if (s_data_ringbuf != NULL) {
         size_t dummy_sz = 0;
         void *dummy = NULL;
@@ -474,8 +489,16 @@ static void handle_cmd_abort_upload(void)
         }
     }
 
+    s_bytes_received = 0;
+    s_expected_file_size = 0;
+    s_expected_seq = 0;
+    s_upload_error = false;
+
+    uint8_t resp[2] = { BLE_SYNC_OP_ABORT_UPLOAD, BLE_SYNC_STATUS_OK };
+    ble_sync_notify(s_control_val_handle, resp, sizeof(resp));
+
     if (s_event_cb) {
-        s_event_cb(BLE_SYNC_EVT_UPLOAD_ABORTED, s_upload_filename, s_event_cb_arg);
+        s_event_cb(BLE_SYNC_EVT_UPLOAD_ABORTED, NULL, s_event_cb_arg);
     }
 }
 
@@ -625,6 +648,11 @@ static int ble_sync_control_access_cb(uint16_t conn_handle, uint16_t attr_handle
         cmd.filename[sizeof(cmd.filename) - 1] = '\0';
         xQueueSend(s_cmd_queue, &cmd, pdMS_TO_TICKS(50));
         break;
+    case BLE_SYNC_OP_ABORT_UPLOAD:
+        cmd.type = CMD_ABORT_UPLOAD;
+        xQueueSend(s_cmd_queue, &cmd, pdMS_TO_TICKS(50));
+        break;
+
 
     default:
         ESP_LOGW(TAG, "Unknown control opcode: 0x%02x", opcode);
@@ -663,7 +691,8 @@ static int ble_sync_data_access_cb(uint16_t conn_handle, uint16_t attr_handle,
     size_t payload_len = copied - 2;
 
     if (seq != s_expected_seq) {
-        ESP_LOGW(TAG, "Seq mismatch: expected %u, got %u", s_expected_seq, seq);
+        ESP_LOGE(TAG, "Seq mismatch: expected %u, got %u", s_expected_seq, seq);
+        s_upload_error = true;
     }
     s_expected_seq = seq + 1;
 
@@ -706,9 +735,12 @@ static int ble_sync_gap_event_cb(struct ble_gap_event *event, void *arg)
             s_conn_handle = event->connect.conn_handle;
             s_is_connected = true;
 
-            // Set preferred MTU to 512
+            // Set preferred MTU to 512 and initiate MTU exchange
             ble_att_set_preferred_mtu(512);
-
+            int rc_mtu = ble_gattc_exchange_mtu(s_conn_handle, NULL, NULL);
+            if (rc_mtu != 0) {
+                ESP_LOGW(TAG, "ble_gattc_exchange_mtu failed: %d", rc_mtu);
+            }
             // Request optimal connection interval (15ms - 30ms) for high throughput
             struct ble_gap_upd_params params = {
                 .itvl_min = 12,  // 15 ms (12 * 1.25)
@@ -1009,13 +1041,37 @@ void ble_sync_stop(void)
 
     if (s_is_connected && s_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-        s_is_connected = false;
-        s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+    }
+    s_is_connected = false;
+    s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+
+    if (s_is_uploading || s_upload_fp != NULL) {
+        if (s_upload_fp != NULL) {
+            fclose(s_upload_fp);
+            s_upload_fp = NULL;
+        }
+        if (s_upload_filename[0] != '\0') {
+            char fpath[256];
+            snprintf(fpath, sizeof(fpath), "%s/%s", BOOKS_DIR_PATH, s_upload_filename);
+            unlink(fpath);
+            ESP_LOGW(TAG, "Deleted partial file on stop: %s", fpath);
+            s_upload_filename[0] = '\0';
+        }
     }
 
-    if (s_is_uploading) {
-        ble_sync_cmd_msg_t cmd = { .type = CMD_ABORT_UPLOAD };
-        xQueueSend(s_cmd_queue, &cmd, 0);
+    s_is_uploading = false;
+    s_upload_error = false;
+    s_bytes_received = 0;
+    s_expected_file_size = 0;
+    s_expected_seq = 0;
+    s_current_mtu = 23;
+
+    if (s_data_ringbuf != NULL) {
+        size_t dummy_sz = 0;
+        void *dummy = NULL;
+        while ((dummy = xRingbufferReceiveUpTo(s_data_ringbuf, &dummy_sz, 0, 4096)) != NULL) {
+            vRingbufferReturnItem(s_data_ringbuf, dummy);
+        }
     }
 }
 

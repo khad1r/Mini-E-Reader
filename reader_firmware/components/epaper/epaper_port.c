@@ -55,6 +55,12 @@ static void epaper_reset(void) {
 }
 
 static void epaper_spi_init(void) {
+    static bool s_spi_initialized = false;
+    if (s_spi_initialized && spi != NULL) {
+        epaper_gpio_init();
+        return;
+    }
+
     esp_err_t ret;
     spi_bus_config_t buscfg = 
     {
@@ -74,25 +80,37 @@ static void epaper_spi_init(void) {
     };
     
     ret = spi_bus_initialize(SPI3_HOST, &buscfg, SPI_DMA_CH_AUTO);
-    ESP_ERROR_CHECK(ret);
-    ret = spi_bus_add_device(SPI3_HOST, &devcfg, &spi);
-    ESP_ERROR_CHECK(ret);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE("EPD", "spi_bus_initialize failed: %d", ret);
+        return;
+    }
 
+    if (spi == NULL) {
+        ret = spi_bus_add_device(SPI3_HOST, &devcfg, &spi);
+        ESP_ERROR_CHECK(ret);
+    }
     epaper_gpio_init();
+    s_spi_initialized = true;
 }
 
 /*
   Waiting for the idle signal
 */
 static void epaper_readbusyh(void) {
-    ESP_LOGI("EPD","e-Paper busy");
+    ESP_LOGI("EPD", "e-Paper busy");
     vTaskDelay(pdMS_TO_TICKS(100));
+    int timeout_count = 0;
     while (1) {
         if (ReadBusy) {
-            ESP_LOGI("EPD","e-Paper busy release");
+            ESP_LOGI("EPD", "e-Paper busy release");
             return;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
+        timeout_count++;
+        if (timeout_count > 300) { // 30 seconds safety timeout
+            ESP_LOGW("EPD", "e-Paper busy timeout waiting for idle");
+            return;
+        }
     }
 }
 

@@ -30,10 +30,11 @@ static void update_activity(void) {
 }
 
 static void on_ble_sync_event(ble_sync_event_t event, const void *param, void *user_data) {
-    if (s_current_view == VIEW_BLE_SYNC) {
+    if (s_btn_queue && s_current_view == VIEW_BLE_SYNC) {
         if (event == BLE_SYNC_EVT_CONNECTED || event == BLE_SYNC_EVT_DISCONNECTED ||
-            event == BLE_SYNC_EVT_UPLOAD_COMPLETE) {
-            reader_ui_render_ble_sync(ble_sync_is_connected(), ble_sync_get_bytes_received());
+            event == BLE_SYNC_EVT_UPLOAD_COMPLETE || event == BLE_SYNC_EVT_FILE_DELETED) {
+            button_event_t evt = { .button = BTN_ID_BOOT, .type = BTN_EVENT_CUSTOM_REFRESH };
+            xQueueSend(s_btn_queue, &evt, 0);
         }
     }
 }
@@ -93,6 +94,13 @@ void app_main(void) {
 
     if (opened) {
         s_current_view = VIEW_READING;
+        if (wakeup == WAKEUP_REASON_BOOT_BUTTON) {
+            text_pager_next_page();
+            book_library_update_offset(text_pager_get_current_offset());
+        } else if (wakeup == WAKEUP_REASON_PWR_BUTTON) {
+            text_pager_prev_page();
+            book_library_update_offset(text_pager_get_current_offset());
+        }
         reader_ui_render_reading();
     } else {
         s_current_view = VIEW_BLE_SYNC;
@@ -111,6 +119,12 @@ void app_main(void) {
         if (xQueueReceive(s_btn_queue, &evt, pdMS_TO_TICKS(500)) == pdTRUE) {
             update_activity();
             ESP_LOGI(TAG, "Btn evt: button=%d, type=%d, view=%d", evt.button, evt.type, s_current_view);
+            if (evt.type == BTN_EVENT_CUSTOM_REFRESH) {
+                if (s_current_view == VIEW_BLE_SYNC) {
+                    reader_ui_render_ble_sync(ble_sync_is_connected(), ble_sync_get_bytes_received());
+                }
+                continue;
+            }
 
             switch (s_current_view) {
                 case VIEW_READING:
@@ -210,15 +224,34 @@ void app_main(void) {
                     if (evt.button == BTN_ID_BOOT && evt.type == BTN_LONG_PRESS) {
                         ble_sync_stop();
                         book_library_scan();
-                        s_current_view = VIEW_READING;
-                        reader_ui_render_reading();
+                        const text_pager_page_t *p = text_pager_get_current_page();
+                        if (!p && book_library_get_count() > 0) {
+                            reading_state_t st;
+                            if (book_library_load_state(&st) == ESP_OK && strlen(st.active_book_path) > 0) {
+                                text_pager_open_book(st.active_book_path, st.byte_offset);
+                            } else {
+                                const book_info_t *b0 = book_library_get_book(0);
+                                if (b0) {
+                                    text_pager_open_book(b0->path, 0);
+                                    book_library_set_active_book(b0->path, true);
+                                }
+                            }
+                        }
+                        if (book_library_get_count() > 0) {
+                            s_current_view = VIEW_READING;
+                            reader_ui_render_reading();
+                        } else {
+                            s_current_view = VIEW_BLE_SYNC;
+                            ble_sync_start();
+                            reader_ui_render_ble_sync(false, 0);
+                        }
                     }
                     break;
             }
         }
 
-        // Auto-sleep check in reading view
-        if (s_current_view == VIEW_READING) {
+        // Auto-sleep check for inactivity (active in all views except active BLE transfer)
+        if (s_current_view != VIEW_BLE_SYNC) {
             int64_t elapsed_sec = (esp_timer_get_time() - s_last_activity_us) / 1000000LL;
             if (elapsed_sec >= UI_INACTIVITY_SLEEP_SEC) {
                 ESP_LOGI(TAG, "Inactivity timeout (%llds). Entering deep sleep...", elapsed_sec);

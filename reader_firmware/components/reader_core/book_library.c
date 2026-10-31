@@ -46,17 +46,14 @@ esp_err_t book_library_init(void) {
         }
     }
 
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-
     ensure_dir_exists(BOOK_LIBRARY_BOOKS_DIR);
     ensure_dir_exists(BOOK_LIBRARY_STATE_DIR);
 
-    // Initial scan and load
+    s_initialized = true;
+
+    // Initial scan and load (both functions acquire s_mutex internally)
     book_library_scan();
     book_library_load_state(&s_reading_state);
-
-    s_initialized = true;
-    xSemaphoreGive(s_mutex);
 
     ESP_LOGI(TAG, "Book library initialized with %u books", (unsigned int)s_book_count);
     return ESP_OK;
@@ -274,14 +271,26 @@ esp_err_t book_library_load_state(reading_state_t *state) {
 
     cJSON_Delete(root);
 
-    // If total_bytes is 0, attempt to look up size from book file
-    if (s_reading_state.total_bytes == 0 && s_reading_state.active_book_path[0] != '\0') {
+    // Validate that active_book_path exists and refresh total_bytes
+    if (s_reading_state.active_book_path[0] != '\0') {
         struct stat st;
-        if (stat(s_reading_state.active_book_path, &st) == 0) {
+        if (stat(s_reading_state.active_book_path, &st) != 0) {
+            ESP_LOGW(TAG, "Saved active book '%s' not found on SD, resetting", s_reading_state.active_book_path);
+            s_reading_state.active_book_path[0] = '\0';
+            s_reading_state.byte_offset = 0;
+            s_reading_state.total_bytes = 0;
+            s_reading_state.bookmark_count = 0;
+        } else if (s_reading_state.total_bytes == 0) {
             s_reading_state.total_bytes = (size_t)st.st_size;
         }
     }
 
+    if (s_reading_state.active_book_path[0] == '\0' && s_book_count > 0) {
+        strncpy(s_reading_state.active_book_path, s_books[0].path, sizeof(s_reading_state.active_book_path) - 1);
+        s_reading_state.byte_offset = 0;
+        s_reading_state.total_bytes = s_books[0].size;
+        s_reading_state.bookmark_count = 0;
+    }
     if (state) {
         *state = s_reading_state;
     }
@@ -392,9 +401,10 @@ esp_err_t book_library_set_active_book(const char *book_path, bool reset_offset)
         s_reading_state.total_bytes = 0;
     }
 
+    reading_state_t copy = s_reading_state;
     xSemaphoreGive(s_mutex);
 
-    return book_library_save_state(&s_reading_state);
+    return book_library_save_state(&copy);
 }
 
 esp_err_t book_library_update_offset(size_t offset) {

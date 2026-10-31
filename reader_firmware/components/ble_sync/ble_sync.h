@@ -27,7 +27,7 @@ extern "C" {
 #define BLE_SYNC_OP_START_UPLOAD         0x02
 #define BLE_SYNC_OP_FINISH_UPLOAD        0x03
 #define BLE_SYNC_OP_DELETE_BOOK          0x04
-
+#define BLE_SYNC_OP_ABORT_UPLOAD         0x05
 /* Control Response Status Codes */
 #define BLE_SYNC_STATUS_OK               0x00
 #define BLE_SYNC_STATUS_ERROR            0x01

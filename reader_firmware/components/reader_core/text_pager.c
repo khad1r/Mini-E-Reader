@@ -559,12 +559,17 @@ esp_err_t text_pager_render_page(void) {
     UWORD margin_x   = (s_pager.font_size == TEXT_PAGER_FONT_16) ? 12 : 10;
     UWORD body_y     = UI_BODY_Y_START;
 
-    for (size_t i = 0; i < s_pager.current_page.line_count; i++) {
-        UWORD y_pos = body_y + (UWORD)(i * line_pitch);
-        if (y_pos + body_font->Height >= UI_FOOTER_Y) {
-            break;
+    if (!s_pager.book_open || s_pager.current_page.line_count == 0) {
+        draw_safe_string(20, 80, "No book open.", &Font12, fg_col, bg_col);
+        draw_safe_string(20, 100, "Press BOOT for menu", &Font12, fg_col, bg_col);
+    } else {
+        for (size_t i = 0; i < s_pager.current_page.line_count; i++) {
+            UWORD y_pos = body_y + (UWORD)(i * line_pitch);
+            if (y_pos + body_font->Height >= UI_FOOTER_Y) {
+                break;
+            }
+            draw_safe_string(margin_x, y_pos, s_pager.current_page.lines[i], body_font, fg_col, bg_col);
         }
-        draw_safe_string(margin_x, y_pos, s_pager.current_page.lines[i], body_font, fg_col, bg_col);
     }
 
     // 3. Footer (UI_FOOTER_Y .. Paint.Height - 1)

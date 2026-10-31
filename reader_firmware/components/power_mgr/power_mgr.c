@@ -17,17 +17,14 @@
 #define AUDIO_PA_PIN       GPIO_NUM_46
 #define LED_GREEN_PIN      GPIO_NUM_3
 
-#define BATTERY_ADC_CHANNEL ADC_CHANNEL_0 // GPIO 1
+#define BATTERY_ADC_CHANNEL ADC_CHANNEL_3 // GPIO 4 (ADC1_CH3 on ESP32-S3)
 
 static adc_oneshot_unit_handle_t s_adc_handle = NULL;
 static adc_cali_handle_t         s_cali_handle = NULL;
 static bool                      s_cali_enabled = false;
 
 void power_mgr_early_init(void) {
-    // 1. Release any hold from prior deep sleep
-    gpio_hold_dis(VBAT_PWR_HOLD_PIN);
-
-    // 2. Configure and assert GPIO 17 HIGH immediately to latch system power
+    // 1. Configure and assert GPIO 17 HIGH immediately before disabling sleep hold
     gpio_config_t pwr_conf = {
         .pin_bit_mask = (1ULL << VBAT_PWR_HOLD_PIN),
         .mode = GPIO_MODE_OUTPUT,
@@ -38,19 +35,21 @@ void power_mgr_early_init(void) {
     gpio_config(&pwr_conf);
     gpio_set_level(VBAT_PWR_HOLD_PIN, 1);
 
-    // 3. Disable audio amplifier rails to prevent power waste
+    // 2. Release any hold from prior deep sleep now that pin is driven HIGH
+    gpio_hold_dis(VBAT_PWR_HOLD_PIN);
+    gpio_deep_sleep_hold_dis();
+    // 3. Disable audio amplifier rails (active-low PMOS: 1 = OFF) to prevent power waste
     gpio_config_t audio_conf = {
         .pin_bit_mask = (1ULL << AUDIO_PWR_PIN) | (1ULL << AUDIO_PA_PIN) | (1ULL << LED_GREEN_PIN),
         .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&audio_conf);
-    gpio_set_level(AUDIO_PWR_PIN, 0);
-    gpio_set_level(AUDIO_PA_PIN, 0);
+    gpio_set_level(AUDIO_PWR_PIN, 1); // 1 = OFF
+    gpio_set_level(AUDIO_PA_PIN, 0);  // 0 = Mute
     gpio_set_level(LED_GREEN_PIN, 1); // 1 = OFF for active low LED
-
     // 4. Initialize ADC for battery monitoring
     adc_oneshot_unit_init_cfg_t init_config = {
         .unit_id = ADC_UNIT_1,
@@ -141,6 +140,12 @@ void power_mgr_enter_deep_sleep(uint32_t sleep_seconds) {
     gpio_hold_en(VBAT_PWR_HOLD_PIN);
     gpio_deep_sleep_hold_en();
 
+    // Wait for buttons to be released so Ext1 ANY_LOW does not trigger immediately
+    int timeout_ms = 3000;
+    while ((gpio_get_level(BOOT_BUTTON_PIN) == 0 || gpio_get_level(PWR_BUTTON_PIN) == 0) && timeout_ms > 0) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        timeout_ms -= 10;
+    }
     vTaskDelay(pdMS_TO_TICKS(50));
     esp_deep_sleep_start();
 }

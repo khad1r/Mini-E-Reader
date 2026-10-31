@@ -19,6 +19,7 @@ typedef enum {
     BTN_CLICK = 0,
     BTN_DOUBLE_CLICK,
     BTN_LONG_PRESS,
+    BTN_EVENT_CUSTOM_REFRESH = 99,
 } btn_press_type_t;
 
 typedef struct {

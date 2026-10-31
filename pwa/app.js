@@ -15,7 +15,8 @@ const OPCODES = {
   LIST_BOOKS: 0x01,
   START_UPLOAD: 0x02,
   FINISH_UPLOAD: 0x03,
-  DELETE_BOOK: 0x04
+  DELETE_BOOK: 0x04,
+  ABORT_UPLOAD: 0x05
 };
 
 const CHUNK_SIZE = 506; // Max BLE payload per packet (508B with 2B seq_id fits in 512B MTU)
@@ -855,6 +856,12 @@ async function executeFileUpload(file) {
   } catch (err) {
     log(`Upload Error: ${err.message}`, 'error');
     showToast(`Upload failed: ${err.message}`, 'error');
+    if (controlChar && isConnected) {
+      try {
+        const abortPacket = new Uint8Array([OPCODES.ABORT_UPLOAD]);
+        await controlChar.writeValueWithResponse(abortPacket);
+      } catch (_) {}
+    }
   } finally {
     isUploading = false;
     hideUploadActiveCard();
