@@ -1,6 +1,0 @@
-1.bmp
-1in54g.bmp
-2.bmp
-3.bmp
-5.bmp
-config.txt
